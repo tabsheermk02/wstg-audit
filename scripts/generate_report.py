@@ -56,9 +56,15 @@ def generate_report(
             elif isinstance(raw, list):
                 findings = raw
 
-    # Read surface_map.json if available
+    # Auto-detect surface_map.json if not specified
+    if not surface_map_file or not os.path.exists(surface_map_file):
+        findings_dir = os.path.dirname(os.path.abspath(findings_file))
+        auto_surface = os.path.join(findings_dir, "surface_map.json")
+        if os.path.exists(auto_surface):
+            surface_map_file = auto_surface
+
     surface_data = {}
-    if os.path.exists(surface_map_file):
+    if surface_map_file and os.path.exists(surface_map_file):
         try:
             with open(surface_map_file, "r", encoding="utf-8") as sf:
                 surface_data = json.load(sf)
@@ -355,6 +361,17 @@ def generate_report(
     print(f"Audit report generated successfully: {output_md}")
 
 if __name__ == "__main__":
-    findings_path = sys.argv[1] if len(sys.argv) > 1 else ".wstg-audit/verified_findings.json"
-    out_path = sys.argv[2] if len(sys.argv) > 2 else ".wstg-audit/WSTG-REPORT.md"
-    generate_report(findings_file=findings_path, output_md=out_path)
+    import argparse
+    parser = argparse.ArgumentParser(description="Generate Executive OWASP WSTG Compliance Report.")
+    parser.add_argument("findings", nargs="?", default=".wstg-audit/verified_findings.json", help="Path to findings JSON")
+    parser.add_argument("output", nargs="?", default=None, help="Path for output Markdown report")
+    parser.add_argument("--matrix", default="references/wstg_matrix.json", help="Path to WSTG matrix JSON")
+    parser.add_argument("--surface", default=None, help="Path to surface_map.json (auto-detected if omitted)")
+    args = parser.parse_args()
+
+    out_file = args.output
+    if not out_file:
+        findings_dir = os.path.dirname(os.path.abspath(args.findings))
+        out_file = os.path.join(findings_dir, "WSTG-REPORT.md")
+
+    generate_report(findings_file=args.findings, matrix_file=args.matrix, surface_map_file=args.surface, output_md=out_file)
