@@ -51,6 +51,19 @@ The Python surface engine includes an intra-procedural AST taint tracker that mo
 
 ---
 
+## Audit Execution Profiles & Differential Auditing
+
+The skill supports three operational profiles and Git diff-aware incremental auditing:
+
+| Profile | Scope & Strategy | Execution Commands |
+|---|---|---|
+| **`quick`** | Fast perimeter pass: gateway routing, public unauthenticated routes, and immediate taint flaws. Skips full AST tracing for internal services. | `python scripts/map_surface.py . .wstg-audit/surface_map.json` |
+| **`standard`** (Default) | Full 12 WSTG domains + GenAI Top 10: complete AST surface scan, taint tracking down to sinks, and Invariant Critic evaluation. | `python scripts/map_surface.py . ... && python scripts/run_critic.py . ...` |
+| **`deep`** | Exhaustive adversarial pass: complete AST taint, WebSocket/PubSub consumers, multi-step **A $\rightarrow$ B $\rightarrow$ C exploit chaining**, and full blue-team refutation. | `python scripts/chain_exploits.py ...` |
+| **`--diff` (Incremental)** | Differential PR / Commit audit: uses `scripts/diff_ledger.py` to audit only modified files, carrying forward untouched findings. | `python scripts/diff_ledger.py . --base-ref origin/main` |
+
+---
+
 ## The 4-Phase Audit Workflow
 
 ```
@@ -98,6 +111,25 @@ python .agents/skills/wstg-audit/scripts/run_prefilter.py . .wstg-audit/prefilte
 During Phase 3, the agent reviews candidates against the 5 critical WSTG domains and the deep attack guides in `references/attack_guides/`:
 - `references/attack_guides/web_protocol_and_auth.md` (JWT algorithm confusion, `kid`/`jku` injection, cache deception, CSRF, OAuth PKCE, session invalidation).
 - `references/attack_guides/data_isolation_and_tenancy.md` (BOLA/IDOR, tenant boundaries, Redis keyspace collision, soft-delete leaks, internal header spoofing).
+- `references/attack_guides/exploit_chains_and_bypasses.md` (A->B->C exploit chaining, SSRF IP obfuscation, path desynchronization, 7-Question Gate).
+
+#### The 7-Question Exploitability Gate (Theoretical Bug Filter)
+Before presenting any finding, verify that it passes the 7-Question Gate:
+1. **Concrete Harm:** Does this allow stealing money, dumping confidential PII, taking over accounts, executing code, or breaking business continuity?
+2. **Attacker Perspective:** Can a remote attacker initiate this without requiring the victim to perform bizarre or unreasonable actions?
+3. **Reachable Surface:** Is the endpoint exposed through the perimeter gateway, or is it isolated to private internal cluster loopback?
+4. **No Dead Code:** Is the handler actively wired into the application router, or is it orphaned/deprecated code?
+5. **Mitigation Absence:** Did the Invariant Critic verify that no upstream middleware or database constraint neutralizes the flow?
+6. **Precondition Realism:** Does exploitation require fewer than 3 independent, controllable preconditions?
+7. **Demonstrated Trace:** Is there an unbroken execution path from entrypoint to sink with verified source citations?
+
+If any answer is **NO**, the finding must NOT be marked `confirmed`.
+
+#### Multi-Step Exploit Chaining (`scripts/chain_exploits.py`)
+Run the exploit chaining engine to detect compound attacks where individually moderate findings combine into a critical compromise:
+```bash
+python .agents/skills/wstg-audit/scripts/chain_exploits.py .wstg-audit/verified_findings.json --apply-chains
+```
 
 #### The Adversarial Refutation Protocol (`CRITIC_MODE`)
 To eliminate confirmation bias in single-agent auditing, candidate findings must pass through an active **Blue-Team Falsification Filter** before promotion to `confirmed`:

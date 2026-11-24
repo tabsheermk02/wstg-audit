@@ -173,9 +173,12 @@ async def purge_data(target_id: str):
         finding = {
             "wstg_code": "WSTG-ATHN-04",
             "title": "Unauthenticated Data Purge",
+            "description": "Allows unauthenticated callers to purge database records.",
+            "proof_of_concept": "POST /purge HTTP/1.1",
             "file": "raw_router.py",
             "line": 3,
             "status": "confirmed",
+            "conditions": ["Route exposed publicly"],
             "trace": [
                 {"kind": "entrypoint", "file": "raw_router.py", "line": 3},
                 {"kind": "sink", "file": "raw_router.py", "line": 4}
@@ -185,6 +188,69 @@ async def purge_data(target_id: str):
         self.assertEqual(eval_result["verdict"], "CONFIRMED")
         self.assertEqual(eval_result["disposition_decision"], "PROMOTE_TO_CONFIRMED")
         self.assertEqual(eval_result["mitigations_discovered"], 0)
+        self.assertTrue(eval_result["seven_question_gate"]["passed"])
+
+    def test_seven_question_gate_rejects_test_file(self):
+        finding = {
+            "wstg_code": "WSTG-ATHN-04",
+            "title": "Unauthenticated Delete in Test Code",
+            "description": "Delete route in test harness",
+            "file": "tests/test_dummy.py",
+            "proof_of_concept": "curl localhost",
+            "line": 1,
+            "status": "confirmed",
+            "trace": [{"kind": "entrypoint"}, {"kind": "sink"}]
+        }
+        eval_result = evaluate_finding_with_critic(self.test_dir, finding)
+        self.assertEqual(eval_result["verdict"], "REFUTED")
+        self.assertIn("7-Question Exploitability Gate", eval_result["falsification_summary"])
+
+    def test_exploit_chaining_ato_synthesis(self):
+        from scripts.chain_exploits import evaluate_exploit_chains
+        findings = [
+            {
+                "wstg_code": "WSTG-IDMT-04",
+                "severity": "LOW",
+                "title": "Account Enumeration Oracle",
+                "file": "auth.py",
+                "line": 10
+            },
+            {
+                "wstg_code": "WSTG-CRYP-01",
+                "severity": "HIGH",
+                "title": "Predictable PRNG on Signup OTP",
+                "file": "otp.py",
+                "line": 20
+            }
+        ]
+        chains = evaluate_exploit_chains(findings)
+        self.assertGreaterEqual(len(chains), 1)
+        ato_chain = [c for c in chains if c["chain_id"] == "CHAIN-ATO-01"]
+        self.assertTrue(len(ato_chain) > 0)
+        self.assertEqual(ato_chain[0]["compound_severity"], "CRITICAL")
+        self.assertEqual(len(ato_chain[0]["contributing_findings"]), 2)
+
+    def test_diff_ledger_tracking(self):
+        from scripts.diff_ledger import build_coverage_ledger
+        prior_findings_path = os.path.join(self.test_dir, "prior_findings.json")
+        with open(prior_findings_path, "w") as f:
+            json.dump({
+                "findings": [
+                    {"wstg_code": "WSTG-ATHN-04", "title": "Untouched Bug", "file": "untouched.py"},
+                    {"wstg_code": "WSTG-CRYP-01", "title": "Modified Bug", "file": "modified.py"}
+                ]
+            }, f)
+
+        ledger_out = os.path.join(self.test_dir, "coverage_ledger.json")
+        # In a non-git dir, all files are treated as carried forward
+        ledger = build_coverage_ledger(
+            repo_dir=self.test_dir,
+            base_ref="HEAD~1",
+            prior_findings_path=prior_findings_path,
+            output_ledger_path=ledger_out
+        )
+        self.assertTrue(os.path.exists(ledger_out))
+        self.assertEqual(ledger["carried_forward_count"], 2)
 
 
 if __name__ == "__main__":

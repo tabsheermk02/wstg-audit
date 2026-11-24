@@ -263,7 +263,58 @@ def evaluate_vector_5_intraprocedural_invariants(repo_dir: str, finding: Dict[st
 
 
 # ======================================================================
-# 2. INVARIANT CRITIC EVALUATOR
+# 2. THE 7-QUESTION EXPLOITABILITY GATE (THEORETICAL BUG FILTER)
+# ======================================================================
+
+def evaluate_7_question_gate(repo_dir: str, finding: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Evaluates finding against the 7-Question Exploitability Gate.
+    Ruthlessly drops theoretical bugs with zero demonstrated harm or impossible preconditions.
+    """
+    title_lower = finding.get("title", "").lower()
+    desc_lower = finding.get("description", "").lower()
+    harmful_keywords = [
+        "delete", "overwrite", "bypass", "unauthenticated", "leak", "brute",
+        "idor", "bola", "rce", "injection", "ssrf", "dos", "denial",
+        "enumeration", "predictable", "purge", "arbitrary", "exposure", "unbounded"
+    ]
+    has_harm = any(k in title_lower or k in desc_lower for k in harmful_keywords)
+
+    target_file = finding.get("file", "")
+    full_target = os.path.join(repo_dir, target_file)
+    is_test_file = any(t in target_file.lower() for t in ["/test", "/tests", "_test.py", ".test.ts", "test_"])
+    source_exists = os.path.exists(full_target)
+    
+    conditions = finding.get("conditions", [])
+    precondition_realistic = len(conditions) <= 5
+
+    trace = finding.get("trace", [])
+    unbroken_trace = isinstance(trace, list) and len(trace) >= 2
+
+    poc = finding.get("proof_of_concept", "")
+    poc_present = bool(poc and isinstance(poc, str) and poc.strip())
+
+    gate_checks = {
+        "q1_demonstrated_harm": has_harm,
+        "q2_non_test_production_surface": not is_test_file,
+        "q3_source_file_exists": source_exists,
+        "q4_precondition_feasibility": precondition_realistic,
+        "q5_unbroken_trace_provided": unbroken_trace,
+        "q6_poc_reproduction_stated": poc_present
+    }
+
+    all_passed = all(gate_checks.values())
+    fail_reasons = [k for k, v in gate_checks.items() if not v]
+
+    return {
+        "passed": all_passed,
+        "gate_checks": gate_checks,
+        "fail_reasons": fail_reasons
+    }
+
+
+# ======================================================================
+# 3. INVARIANT CRITIC EVALUATOR
 # ======================================================================
 
 def evaluate_finding_with_critic(
@@ -271,7 +322,7 @@ def evaluate_finding_with_critic(
     finding: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
-    Evaluates a candidate finding across all 5 defense vectors.
+    Evaluates a candidate finding across all 5 defense vectors and the 7-Question Gate.
     Returns the complete critic evaluation record.
     """
     v1 = evaluate_vector_1_gateway(repo_dir, finding)
@@ -283,9 +334,14 @@ def evaluate_finding_with_critic(
     evaluations = [v1, v2, v3, v4, v5]
     mitigations = [e for e in evaluations if e.mitigating_control_found]
 
+    gate_result = evaluate_7_question_gate(repo_dir, finding)
     status = finding.get("status", "confirmed").lower().replace("_", "-")
     
-    if len(mitigations) > 0:
+    if not gate_result["passed"] and status != "needs-validation":
+        verdict = "REFUTED"
+        disposition = "DOWNGRADE_TO_SUPPRESSED"
+        summary = f"Refuted by 7-Question Exploitability Gate: failed {', '.join(gate_result['fail_reasons'])}."
+    elif len(mitigations) > 0:
         verdict = "REFUTED"
         disposition = "DOWNGRADE_TO_SUPPRESSED"
         summary = f"Refuted by {len(mitigations)} mitigating architectural defense(s) discovered in source."
@@ -296,7 +352,7 @@ def evaluate_finding_with_critic(
     else:
         verdict = "CONFIRMED"
         disposition = "PROMOTE_TO_CONFIRMED"
-        summary = "Vulnerability survived all 5 adversarial falsification attempts. No mitigating controls found."
+        summary = "Vulnerability survived all 5 adversarial falsification attempts and passed the 7-Question Exploitability Gate."
 
     return {
         "verdict": verdict,
@@ -306,6 +362,7 @@ def evaluate_finding_with_critic(
         "mitigations_discovered": len(mitigations),
         "falsification_summary": summary,
         "disposition_decision": disposition,
+        "seven_question_gate": gate_result,
         "vector_evaluations": [e.to_dict() for e in evaluations]
     }
 

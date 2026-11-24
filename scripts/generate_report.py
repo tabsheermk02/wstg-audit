@@ -136,6 +136,20 @@ def generate_report(
     commit_ref = scope_info.get("commit", "HEAD")
 
     gateway_routes_count = surface_data.get("gateway_routes_discovered", 0)
+    
+    # Check for differential coverage ledger
+    ledger_file = os.path.join(os.path.dirname(os.path.abspath(findings_file)), "coverage_ledger.json")
+    ledger_line = ""
+    if os.path.exists(ledger_file):
+        try:
+            with open(ledger_file, "r", encoding="utf-8") as lf:
+                ledger_data = json.load(lf)
+                carried = ledger_data.get("carried_forward_count", 0)
+                reval = ledger_data.get("revalidation_needed_count", 0)
+                ledger_line = f"- **Differential Git Ledger:** Incremental diff mode active ({carried} untouched findings carried forward, {reval} modified re-audited)"
+        except Exception:
+            pass
+
     lines = [
         f"# Security Audit Report: {target_repo} @ {commit_ref}",
         f"**Audit Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  ",
@@ -150,13 +164,17 @@ def generate_report(
         f"- **Execution Policy:** {scope_info.get('execution_policy', 'Source-only static analysis, AST taint verification & trust-boundary mapping (No target code executed live)')}",
         f"- **Gateway-to-Service Mapping:** {scope_info.get('gateway_mappings_detected', f'{gateway_routes_count} gateway routes discovered via pluggable drivers')}",
         f"- **Total Attack Surface Analyzed:** {surface_data.get('total_endpoints', 'N/A')} endpoints, {surface_data.get('total_non_rest_entrypoints', 0)} non-REST entrypoints",
+    ]
+    if ledger_line:
+        lines.append(ledger_line)
+    lines.extend([
         "- **Limits & Deviations:** Offline inspection mode. Ingress WAF rules, production cloud IAM bindings, and live third-party API limits are external deployment facts recorded under Needs Validation.",
         "",
         "---",
         "",
         "## 2. Security Posture Summary",
         ""
-    ]
+    ])
 
     if posture_summary:
         lines.append(posture_summary)
@@ -260,6 +278,49 @@ def generate_report(
                     lines.append(f"  - `{v_name}`: **{icon}** — *{v_details}*")
 
             lines.extend([
+                "",
+                "---",
+                ""
+            ])
+
+    # ------------------------------------------------------------------
+    # Section 3.5: Compound Exploit Chains (A -> B -> C Attack Scenarios)
+    # ------------------------------------------------------------------
+    exploit_chains = report_data.get("exploit_chains", [])
+    if not exploit_chains:
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            from chain_exploits import evaluate_exploit_chains
+            exploit_chains = evaluate_exploit_chains(findings, needs_validation)
+        except Exception:
+            exploit_chains = []
+
+    if exploit_chains:
+        lines.extend([
+            "## 3.5. Compound Exploit Chains (A $\\rightarrow$ B $\\rightarrow$ C Attack Scenarios)",
+            "",
+            "These attack scenarios demonstrate how individually verified findings and leads chain together into critical multi-step exploits:",
+            ""
+        ])
+        for c_idx, c in enumerate(exploit_chains, 1):
+            sev = c.get("compound_severity", "HIGH").upper()
+            lines.extend([
+                f"### Chain {c_idx}: [{sev}] {c.get('name', 'Compound Chain')}",
+                f"- **Title:** {c.get('title', '')}",
+                f"- **Compound Severity:** `{sev}`",
+                f"- **Strategic Impact:** {c.get('impact', '')}",
+                "",
+                "**Attack Scenario:**",
+                c.get("description", ""),
+                "",
+                "**Chained Vulnerability Components:**"
+            ])
+            for cf in c.get("contributing_findings", []):
+                lines.append(f"- `[{cf.get('wstg_code', '')}]` **{cf.get('title', '')}** (`{cf.get('file', '')}:{cf.get('line', '')}`)")
+            lines.extend([
+                "",
+                "**Compound Remediation Strategy:**",
+                c.get("remediation_summary", ""),
                 "",
                 "---",
                 ""
