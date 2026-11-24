@@ -42,7 +42,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 SKIP_DIRS = {
     ".git", ".venv", "venv", "node_modules", "vendor", "target", "bin",
     "obj", "dist", "build", "__pycache__", ".next", ".nuxt", "tests", "test",
-    "coverage", ".vscode", "docs", ".gemini", ".wstg-audit"
+    "coverage", ".vscode", "docs", ".gemini", ".wstg-audit", ".agents",
+    ".claude", ".cursor", ".idea"
 }
 
 # ======================================================================
@@ -1079,7 +1080,18 @@ def scan_file_for_non_rest_entrypoints(file_path: str, content: str, ext: str) -
     if ext == ".py":
         if any(p in content for p in ["GcpPubSubEventSubscriber", "basic_consume(", "KafkaConsumer(", "@celery.task", "@app.task"]):
             for line_no, line in enumerate(lines, 1):
-                if any(k in line for k in ["basic_consume(", "subscriber.subscribe(", "GcpPubSubEventSubscriber", "@celery.task", "@app.task"]):
+                clean_line = line.strip()
+                if clean_line.startswith("#") or clean_line.startswith("logger.") or clean_line.startswith("logging.") or clean_line.startswith("print("):
+                    continue
+                is_pubsub_match = False
+                if clean_line.startswith("class ") and any(k in clean_line for k in ["Subscriber", "Consumer"]):
+                    is_pubsub_match = True
+                elif clean_line.startswith("@") and any(k in clean_line for k in ["celery.task", "app.task"]):
+                    is_pubsub_match = True
+                elif any(k in clean_line for k in ["basic_consume(", "subscriber.subscribe(", "KafkaConsumer("]):
+                    is_pubsub_match = True
+
+                if is_pubsub_match:
                     surrounding = "\n".join(lines[line_no:min(len(lines), line_no + 25)])
                     has_validation = any(v in surrounding.lower() for v in ["verify", "signature", "hmac", "token", "schema", "pydantic"])
                     entrypoints.append({
@@ -1087,7 +1099,7 @@ def scan_file_for_non_rest_entrypoints(file_path: str, content: str, ext: str) -
                         "line": line_no,
                         "kind": "PubSub/Queue",
                         "protocol": "async-event",
-                        "path": line.strip()[:60],
+                        "path": clean_line[:60],
                         "is_unauthenticated": not has_validation,
                         "threat": "MEDIUM: Unvalidated Message Queue Consumer" if not has_validation else "SECURE: Event Signature Verified",
                         "description": "Background event subscriber processing untrusted payload without message verification." if not has_validation else "Guarded message consumer."
