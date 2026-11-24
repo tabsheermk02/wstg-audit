@@ -99,20 +99,39 @@ During Phase 3, the agent reviews candidates against the 5 critical WSTG domains
 - `references/attack_guides/web_protocol_and_auth.md` (JWT algorithm confusion, `kid`/`jku` injection, cache deception, CSRF, OAuth PKCE, session invalidation).
 - `references/attack_guides/data_isolation_and_tenancy.md` (BOLA/IDOR, tenant boundaries, Redis keyspace collision, soft-delete leaks, internal header spoofing).
 
-#### The Adversarial Refutation Protocol
-Before moving any candidate finding to `confirmed`, the auditor must execute an active attempt to **refute the vulnerability**:
-> *"You did not write this candidate. Try to refute it from repository source and bounded local evidence."*
+#### The Adversarial Refutation Protocol (`CRITIC_MODE`)
+To eliminate confirmation bias in single-agent auditing, candidate findings must pass through an active **Blue-Team Falsification Filter** before promotion to `confirmed`:
 
-Ask these refutation questions:
-1. **Upstream Ingress / Sanitizer:** Does an upstream gateway or middleware strip, validate, or normalize the untrusted parameter before it reaches the handler?
-2. **Framework / ORM Defenses:** Does the ORM (SQLAlchemy, Prisma, TypeORM, Hibernate) parameterize the query by design? Does a Pydantic schema or DTO reject malicious payloads?
-3. **Internal Boundary Isolation:** Is the route genuinely exposed via an external gateway mapping, or is it strictly confined to private cluster loopback?
-4. **Ownership Invariant:** Does subsequent service code perform a tenant or ownership check before committing the mutation?
+> **Prime Mandate:** Assume every candidate finding is a **FALSE POSITIVE** until you have thoroughly inspected upstream gateways, ASGI/WSGI middlewares, DTO schema boundaries, and ORM persistence constraints.
+
+The auditor agent must invoke the **Invariant Critic** through either of two execution modes:
+
+##### 1. Programmatic Automated Falsification Engine (CLI)
+Run the automated invariant critic engine across all candidates:
+```bash
+python .agents/skills/wstg-audit/scripts/run_critic.py . .wstg-audit/verified_findings.json --apply-verdicts --out-critic .wstg-audit/critic_verdict.json
+```
+The critic checks the 5 defense vectors deterministically:
+1. **Vector 1: Upstream Gateway & Reverse Proxy Rewrites:** Checks if the route is exposed through `RouteMapping`, Nginx, or Envoy, and whether the mapping binds a gateway-level auth guard.
+2. **Vector 2: Pipeline Middlewares & Request Interceptors:** Inspects `app.py` for global JWT/auth middlewares, client-header sanitizers, or security interceptors.
+3. **Vector 3: Framework DTO, Schema & Type Boundaries:** Verifies whether the controller binds auth dependencies (`Depends(get_current_user)`, `@UseGuards()`) or whether strict Pydantic/DTO typing neutralizes injection.
+4. **Vector 4: Data Layer, ORM & Persistence Constraints:** Inspects the sink for ORM parameterization (`session.execute(text(...), params)`), preventing SQL injection.
+5. **Vector 5: Intra-Procedural Invariants & Downstream Authorization:** Traces use cases for internal tenant verification (`tenant_id == current_user.tenant_id`) or distributed locking.
+
+##### 2. Subagent Blue-Team Delegation
+For complex business logic or multi-tenant flows, define and launch the dedicated **Invariant Critic Subagent** (`agents/invariant-critic.md`):
+```python
+critic_id = invoke_subagent(
+    TypeName="research",
+    Role="Adversarial Invariant Critic",
+    Prompt="Mandate: DISPROVE candidate finding [WSTG-ATHZ-02]. Search upstream middlewares, ORM parameterization, and service authorization to find mitigating controls."
+)
+```
 
 *Disposition States:*
-- `confirmed`: Invariant failure is unbroken from Entrypoint to Sink. Refutation failed.
+- `confirmed`: Invariant failure is unbroken from Entrypoint to Sink. The candidate survived all 5 falsification attempts with zero mitigating controls discovered.
 - `needs-validation`: Code flaw verified, but decisive exploitability depends on an unobserved production fact (e.g. edge WAF, cloud IAM).
-- `suppressed`: Refuted. An architectural defense neutralizes the risk (record refutation rationale).
+- `suppressed`: Refuted. An architectural defense neutralizes the risk (record refutation evidence and vector).
 
 #### Verification Contract (`.wstg-audit/verified_findings.json`)
 Every verified finding must strictly follow the invariant schema:
@@ -141,7 +160,14 @@ Every verified finding must strictly follow the invariant schema:
       "poc_language": "http",
       "proof_of_concept": "POST / HTTP/1.1\\nHost: target\\nContent-Type: application/json\\n\\n{\"email\":\"attacker@evil.com\",\"role\":\"admin\"}",
       "remediation": "Remove @Public() decorator and enforce @UseGuards(RolesGuard) with @Roles(Role.SUPER_ADMIN).",
-      "regression_test": "expect(request(app).post('/users').send({role: 'admin'})).rejects.toHaveProperty('status', 401);"
+      "regression_test": "expect(request(app).post('/users').send({role: 'admin'})).rejects.toHaveProperty('status', 401);",
+      "critic_falsification": {
+        "verdict": "CONFIRMED",
+        "adversarial_status": "SURVIVED_FALSIFICATION",
+        "falsification_attempts_made": 5,
+        "mitigations_discovered": 0,
+        "falsification_summary": "Vulnerability survived all 5 adversarial falsification attempts."
+      }
     }
   ]
 }

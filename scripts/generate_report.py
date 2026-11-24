@@ -240,6 +240,25 @@ def generate_report(
                     f"```"
                 ])
 
+            critic_data = f.get("critic_falsification")
+            if critic_data:
+                c_verdict = critic_data.get("verdict", "CONFIRMED")
+                c_summary = critic_data.get("falsification_summary", "")
+                c_vectors = critic_data.get("vector_evaluations", [])
+                lines.extend([
+                    "",
+                    "**Adversarial Invariant Critic Audit Trail (`CRITIC_MODE`):**",
+                    f"- **Critic Verdict:** `⚔️ {c_verdict}` ({critic_data.get('adversarial_status', 'SURVIVED_FALSIFICATION')})",
+                    f"- **Falsification Summary:** {c_summary}",
+                    "- **5-Vector Refutation Evaluations:**"
+                ])
+                for v in c_vectors:
+                    v_name = v.get("vector", "Vector")
+                    v_status = v.get("status", "FAILED_TO_REFUTE")
+                    v_details = v.get("details", "")
+                    icon = "🛡️ PASSED DEFENSE" if v_status == "PASSED_DEFENSE" else "❌ FAILED TO REFUTE"
+                    lines.append(f"  - `{v_name}`: **{icon}** — *{v_details}*")
+
             lines.extend([
                 "",
                 "---",

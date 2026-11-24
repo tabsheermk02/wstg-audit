@@ -120,6 +120,16 @@ def validate_finding_record(
     if not reg_test or not isinstance(reg_test, str):
         warnings.append(f"{prefix}: Missing 'regression_test' specification. Recommended to specify automated test assertion.")
 
+    # 6. Critic Falsification Metadata (Validated if present)
+    critic = finding.get("critic_falsification")
+    if critic is not None:
+        if not isinstance(critic, dict):
+            errors.append(f"{prefix}: 'critic_falsification' must be an object")
+        else:
+            c_verdict = critic.get("verdict", "")
+            if c_verdict not in ("CONFIRMED", "REFUTED", "NEEDS_FACTS"):
+                errors.append(f"{prefix}: Invalid critic verdict '{c_verdict}'. Must be CONFIRMED, REFUTED, or NEEDS_FACTS.")
+
     return errors, warnings
 
 
