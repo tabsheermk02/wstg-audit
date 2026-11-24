@@ -31,7 +31,7 @@ from scripts.map_surface import (
     scan_codebase
 )
 
-from scripts.generate_patches import generate_patches, generate_hunk_for_finding
+from scripts.validate_findings import validate_findings_file
 from scripts.generate_report import generate_report
 
 class TestWSTGAuditV2(unittest.TestCase):
@@ -264,42 +264,103 @@ class OrderSubscriber(GcpPubSubEventSubscriber):
         self.assertEqual(entries[0]["kind"], "PubSub/Queue")
 
     # ------------------------------------------------------------------
-    # 5. Patch Generator Tests
+    # 5. Deterministic Findings & Invariant Validator Tests
     # ------------------------------------------------------------------
-    def test_patch_generator(self):
-        # Create a sample target file
+    def test_validate_findings_success(self):
         target_file = os.path.join(self.test_dir, "auth_routes.py")
         with open(target_file, "w", encoding="utf-8") as f:
             f.write("@router.post('/delete/{email}')\ndef delete_user(email: str):\n    pass\n")
 
-        findings_data = {
+        valid_findings = {
             "findings": [
                 {
                     "wstg_code": "WSTG-ATHN-04",
                     "severity": "CRITICAL",
                     "status": "confirmed",
                     "title": "Unauthenticated user deletion",
-                    "file": target_file,
+                    "description": "Endpoint lacks authentication.",
+                    "root_cause": "Missing dependency guard on delete route.",
+                    "intended_behavior": "Only authenticated admins can invoke deletion.",
+                    "file": "auth_routes.py",
                     "line": 1,
-                    "remediation": "Add authentication dependency."
+                    "conditions": ["Route exposed via gateway"],
+                    "trace": [
+                        {"kind": "entrypoint", "file": "auth_routes.py", "line": 1, "scope": "delete_user", "description": "Entrypoint"},
+                        {"kind": "sink", "file": "auth_routes.py", "line": 2, "scope": "delete_user", "description": "Deletion sink"}
+                    ],
+                    "remediation": "Add Depends(get_current_admin).",
+                    "regression_test": "test_unauthenticated_delete_returns_401()"
                 }
             ]
         }
         findings_json = os.path.join(self.test_dir, "findings.json")
         with open(findings_json, "w", encoding="utf-8") as f:
-            json.dump(findings_data, f)
+            json.dump(valid_findings, f)
 
-        patches_dir = os.path.join(self.test_dir, "patches")
-        result = generate_patches(findings_file=findings_json, output_dir=patches_dir)
+        is_valid, errors, warnings = validate_findings_file(findings_json, repo_dir=self.test_dir)
+        self.assertTrue(is_valid, f"Validation failed unexpectedly: {errors}")
+        self.assertEqual(len(errors), 0)
 
-        self.assertEqual(result["total_patches"], 1)
-        patch_path = result["patches"][0]["patch_path"]
-        self.assertTrue(os.path.exists(patch_path))
+    def test_validate_findings_catches_nonexistent_file(self):
+        invalid_findings = {
+            "findings": [
+                {
+                    "wstg_code": "WSTG-ATHN-04",
+                    "severity": "CRITICAL",
+                    "status": "confirmed",
+                    "title": "Fake finding",
+                    "description": "Desc",
+                    "root_cause": "Cause",
+                    "intended_behavior": "Behavior",
+                    "file": "nonexistent_file_hallucinated.py",
+                    "line": 10,
+                    "trace": [
+                        {"kind": "entrypoint", "file": "nonexistent_file_hallucinated.py", "line": 1, "scope": "a", "description": "b"},
+                        {"kind": "sink", "file": "nonexistent_file_hallucinated.py", "line": 2, "scope": "a", "description": "b"}
+                    ],
+                    "remediation": "Fix"
+                }
+            ]
+        }
+        findings_json = os.path.join(self.test_dir, "invalid_findings.json")
+        with open(findings_json, "w", encoding="utf-8") as f:
+            json.dump(invalid_findings, f)
 
-        with open(patch_path, "r", encoding="utf-8") as pf:
-            patch_content = pf.read()
-            self.assertIn("diff --git", patch_content)
-            self.assertIn("WSTG Fix WSTG-ATHN-04", patch_content)
+        is_valid, errors, warnings = validate_findings_file(findings_json, repo_dir=self.test_dir)
+        self.assertFalse(is_valid)
+        self.assertTrue(any("Target file does not exist" in e for e in errors))
+
+    def test_validate_findings_catches_missing_sink_in_trace(self):
+        target_file = os.path.join(self.test_dir, "auth_routes.py")
+        with open(target_file, "w", encoding="utf-8") as f:
+            f.write("@router.post('/test')\ndef test(): pass\n")
+
+        invalid_trace = {
+            "findings": [
+                {
+                    "wstg_code": "WSTG-ATHN-04",
+                    "severity": "CRITICAL",
+                    "status": "confirmed",
+                    "title": "Missing sink finding",
+                    "description": "Desc",
+                    "root_cause": "Cause",
+                    "intended_behavior": "Behavior",
+                    "file": "auth_routes.py",
+                    "line": 1,
+                    "trace": [
+                        {"kind": "entrypoint", "file": "auth_routes.py", "line": 1, "scope": "test", "description": "Entrypoint"}
+                    ],
+                    "remediation": "Fix"
+                }
+            ]
+        }
+        findings_json = os.path.join(self.test_dir, "invalid_trace.json")
+        with open(findings_json, "w", encoding="utf-8") as f:
+            json.dump(invalid_trace, f)
+
+        is_valid, errors, warnings = validate_findings_file(findings_json, repo_dir=self.test_dir)
+        self.assertFalse(is_valid)
+        self.assertTrue(any("missing a 'sink' step" in e for e in errors))
 
 if __name__ == "__main__":
     unittest.main()

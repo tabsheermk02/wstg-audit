@@ -93,27 +93,29 @@ python .agents/skills/wstg-audit/scripts/run_prefilter.py . .wstg-audit/prefilte
 
 ---
 
-### Phase 3: Deep Logic & Authorization Verification
+### Phase 3: Deep Invariant Verification & Adversarial Refutation
 
-The agent audits candidate findings against the 5 critical WSTG domains:
+During Phase 3, the agent reviews candidates against the 5 critical WSTG domains and the deep attack guides in `references/attack_guides/`:
+- `references/attack_guides/web_protocol_and_auth.md` (JWT algorithm confusion, `kid`/`jku` injection, cache deception, CSRF, OAuth PKCE, session invalidation).
+- `references/attack_guides/data_isolation_and_tenancy.md` (BOLA/IDOR, tenant boundaries, Redis keyspace collision, soft-delete leaks, internal header spoofing).
 
-1. **`WSTG-ATHZ-02` (BOLA / IDOR & Tenant Boundary):**
-   - For every endpoint accepting an object ID (`{id}`, `{user_id}`, `{session_id}`):
-     - Does the service query verify ownership (`auth.user_id == record.user_id`) or tenant context?
-     - Can a user from Tenant A access resources in Tenant B?
-2. **`WSTG-ATHN-04` (Gateway-to-Service Trust Breaches):**
-   - Does a public gateway route forward directly to an unguarded downstream handler?
-   - Does the downstream handler trust incoming `x-user-id` or `x-role` without gateway authentication?
-3. **`WSTG-SESS-04` (Cache & Session Isolation):**
-   - Are Redis session or cache keys strictly namespaced per tenant?
-4. **`WSTG-INPV-05 / 11 / 12` (Injection Flaws):**
-   - Are SQL queries, system commands, or file system paths constructed via dynamic string formatting?
-5. **`OWASP-LLM01 / 10` (GenAI Vulnerabilities):**
-   - Does the model call have bounded token generation (`max_tokens`)?
-   - Are untrusted database values or user inputs concatenated into system prompt instructions?
+#### The Adversarial Refutation Protocol
+Before moving any candidate finding to `confirmed`, the auditor must execute an active attempt to **refute the vulnerability**:
+> *"You did not write this candidate. Try to refute it from repository source and bounded local evidence."*
+
+Ask these refutation questions:
+1. **Upstream Ingress / Sanitizer:** Does an upstream gateway or middleware strip, validate, or normalize the untrusted parameter before it reaches the handler?
+2. **Framework / ORM Defenses:** Does the ORM (SQLAlchemy, Prisma, TypeORM, Hibernate) parameterize the query by design? Does a Pydantic schema or DTO reject malicious payloads?
+3. **Internal Boundary Isolation:** Is the route genuinely exposed via an external gateway mapping, or is it strictly confined to private cluster loopback?
+4. **Ownership Invariant:** Does subsequent service code perform a tenant or ownership check before committing the mutation?
+
+*Disposition States:*
+- `confirmed`: Invariant failure is unbroken from Entrypoint to Sink. Refutation failed.
+- `needs-validation`: Code flaw verified, but decisive exploitability depends on an unobserved production fact (e.g. edge WAF, cloud IAM).
+- `suppressed`: Refuted. An architectural defense neutralizes the risk (record refutation rationale).
 
 #### Verification Contract (`.wstg-audit/verified_findings.json`)
-Every verified finding must be written with the following strict JSON schema:
+Every verified finding must strictly follow the invariant schema:
 ```json
 {
   "audited_domains": ["WSTG-ATHZ", "WSTG-ATHN", "OWASP-LLM"],
@@ -124,15 +126,22 @@ Every verified finding must be written with the following strict JSON schema:
       "status": "confirmed",
       "title": "Unauthenticated Administrative User Creation via Public Decorator",
       "description": "Endpoint POST / is decorated with @Public(), bypassing the global AuthGuard and allowing anonymous callers to create admin users.",
+      "root_cause": "Missing role verification and explicit bypass of global JWT guard via @Public() decorator.",
+      "intended_behavior": "Only authenticated callers with SUPER_ADMIN role should be permitted to register administrative accounts.",
       "file": "api/libs/admin/src/eworx_users/eworx_users.controller.ts",
       "line": 101,
+      "conditions": [
+        "Global AuthGuard configured in app.module.ts",
+        "@Public() metadata overrides execution context in AuthGuard.canActivate()"
+      ],
       "trace": [
         { "kind": "entrypoint", "file": "api/libs/admin/src/eworx_users/eworx_users.controller.ts", "line": 101, "scope": "create", "description": "POST / decorated with @Public()" },
         { "kind": "sink", "file": "api/libs/admin/src/eworx_users/eworx_users.service.ts", "line": 34, "scope": "create", "description": "Persists admin user in MongoDB without auth check" }
       ],
       "poc_language": "http",
       "proof_of_concept": "POST / HTTP/1.1\\nHost: target\\nContent-Type: application/json\\n\\n{\"email\":\"attacker@evil.com\",\"role\":\"admin\"}",
-      "remediation": "Remove @Public() and enforce @UseGuards(RolesGuard) requiring ADMIN role."
+      "remediation": "Remove @Public() decorator and enforce @UseGuards(RolesGuard) with @Roles(Role.SUPER_ADMIN).",
+      "regression_test": "expect(request(app).post('/users').send({role: 'admin'})).rejects.toHaveProperty('status', 401);"
     }
   ]
 }
@@ -140,18 +149,19 @@ Every verified finding must be written with the following strict JSON schema:
 
 ---
 
-### Phase 4: Compliance Scorecard & Remediation Patch Generation
+### Phase 4: Deterministic Validation & Compliance Scorecard
 
-#### 1. Compile the Compliance Report
+#### 1. Validate Findings Against Target Source
+Before generating the report, run the deterministic schema and citation validator:
+```bash
+python .agents/skills/wstg-audit/scripts/validate_findings.py .wstg-audit/verified_findings.json
+```
+This guarantees zero hallucinated paths, verifies all positive line numbers against real file lengths, and enforces the invariant finding contract.
+
+#### 2. Compile the Compliance Report
 ```bash
 python .agents/skills/wstg-audit/scripts/generate_report.py .wstg-audit/verified_findings.json .wstg-audit/WSTG-REPORT.md
 ```
-
-#### 2. Generate Automated Git Unified Diff Patches
-```bash
-python .agents/skills/wstg-audit/scripts/generate_patches.py .wstg-audit/verified_findings.json --output-dir .wstg-audit/patches
-```
-This produces ready-to-apply `.patch` files for each confirmed vulnerability as well as a consolidated `all_remediations.patch`.
 
 #### Scorecard Status Standards
 | Scorecard Status | Meaning & Criteria |

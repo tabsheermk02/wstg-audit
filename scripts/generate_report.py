@@ -187,6 +187,22 @@ def generate_report(
                 "**Description:**",
                 f.get("description", "N/A"),
                 "",
+                f"> **Root Cause (Invariant Failure):** {f.get('root_cause', 'Unenforced authorization / boundary control')}",
+                f"> ",
+                f"> **Intended Behavior:** {f.get('intended_behavior', 'Reject or isolate unauthenticated / cross-tenant requests')}",
+                "",
+                "**Preconditions Required:**"
+            ])
+
+            conditions = f.get("conditions", [])
+            if conditions:
+                for cond in conditions:
+                    lines.append(f"- {cond}")
+            else:
+                lines.append("- Direct network access to route entrypoint.")
+
+            lines.extend([
+                "",
                 "**Execution Trace (Entrypoint $\\rightarrow$ Sink):**"
             ])
 
@@ -204,8 +220,21 @@ def generate_report(
                 f.get("proof_of_concept", "# Verified via code inspection"),
                 "```",
                 "",
-                "**Recommended Remediation:**",
-                f.get("remediation", "Apply appropriate authorization and input controls."),
+                "**Recommended Invariant Remediation:**",
+                f.get("remediation", "Apply appropriate authorization and input controls.")
+            ])
+
+            reg_test = f.get("regression_test", "")
+            if reg_test:
+                lines.extend([
+                    "",
+                    "**Automated Regression Test Specification:**",
+                    f"```text",
+                    reg_test,
+                    f"```"
+                ])
+
+            lines.extend([
                 "",
                 "---",
                 ""

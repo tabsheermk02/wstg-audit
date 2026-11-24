@@ -32,8 +32,10 @@ A shareable, methodology-driven application security auditor adhering to the **O
 4. **Non-REST Entrypoint Scanner:**
    - Audits **WebSockets** (`@router.websocket`, `socket.io`, `ws.on('connection')`) for handshake token validation.
    - Audits **Pub/Sub & Message Queues** (GCP Pub/Sub, RabbitMQ, Kafka, Celery) for unvalidated payload ingestion.
-5. **Automated Git Remediation Patch Generator:**
-   - Automatically synthesizes ready-to-apply `.patch` Git unified diff files directly from confirmed audit findings.
+5. **Deterministic Invariant & Citation Validator (`validate_findings.py`):**
+   - Validates findings against physical source files, checks line boundaries, enforces unbroken traces (`entrypoint` $\rightarrow$ `sink`), and requires root cause, intended behavior, and regression test specifications.
+6. **Deep Protocol & Tenancy Attack Guides:**
+   - Integrated heuristics for JWT algorithm confusion, key injection (`kid`/`jku`), HTTP request desync, cache deception, BOLA across tenants, and unpartitioned cache stores.
 
 ---
 
@@ -57,14 +59,14 @@ A shareable, methodology-driven application security auditor adhering to the **O
 python scripts/map_surface.py <path-to-target-repo> .wstg-audit/surface_map.json
 ```
 
-### 2. Generate Compliance Scorecard:
+### 2. Validate Findings Invariants & Source Citations:
 ```bash
-python scripts/generate_report.py .wstg-audit/verified_findings.json .wstg-audit/WSTG-REPORT.md
+python scripts/validate_findings.py .wstg-audit/verified_findings.json
 ```
 
-### 3. Generate Automated Remediation Patches:
+### 3. Generate Compliance Scorecard & Markdown Report:
 ```bash
-python scripts/generate_patches.py .wstg-audit/verified_findings.json --output-dir .wstg-audit/patches
+python scripts/generate_report.py .wstg-audit/verified_findings.json .wstg-audit/WSTG-REPORT.md
 ```
 
 ---
