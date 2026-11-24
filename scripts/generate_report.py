@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Enterprise OWASP WSTG & LLM Security Audit Report Generator
+Enterprise OWASP WSTG & LLM Security Audit Report Generator (v2.0)
 Produces rigorous, executive-grade security reports matching Cloudflare security-audit standards.
 Structures output into:
 1. Run Scope & Limits (Deviations, Source Ref, Sandbox Limits)
@@ -9,7 +9,8 @@ Structures output into:
 4. Needs-Validation Leads (Decisive Unknowns, Deployment Dependencies)
 5. Positive Security Patterns & Defenses Verified
 6. Hardening & Operational Hygiene
-7. OWASP WSTG & LLM Compliance Scorecard
+7. Non-REST Entrypoints & Gateway Topology
+8. OWASP WSTG & LLM Compliance Scorecard
 """
 
 import json
@@ -17,7 +18,12 @@ import os
 import sys
 from datetime import datetime
 
-def generate_report(findings_file=".wstg-audit/verified_findings.json", matrix_file="references/wstg_matrix.json", output_md=".wstg-audit/WSTG-REPORT.md"):
+def generate_report(
+    findings_file=".wstg-audit/verified_findings.json",
+    matrix_file="references/wstg_matrix.json",
+    surface_map_file=".wstg-audit/surface_map.json",
+    output_md=".wstg-audit/WSTG-REPORT.md"
+):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     matrix_path = os.path.join(script_dir, "..", matrix_file) if not os.path.exists(matrix_file) else matrix_file
 
@@ -49,6 +55,15 @@ def generate_report(findings_file=".wstg-audit/verified_findings.json", matrix_f
                 scope_info = raw.get("scope", {})
             elif isinstance(raw, list):
                 findings = raw
+
+    # Read surface_map.json if available
+    surface_data = {}
+    if os.path.exists(surface_map_file):
+        try:
+            with open(surface_map_file, "r", encoding="utf-8") as sf:
+                surface_data = json.load(sf)
+        except Exception:
+            pass
 
     def extract_domain_key(code):
         if not code:
@@ -114,6 +129,7 @@ def generate_report(findings_file=".wstg-audit/verified_findings.json", matrix_f
     target_repo = scope_info.get("repo", os.path.basename(os.getcwd()))
     commit_ref = scope_info.get("commit", "HEAD")
 
+    gateway_routes_count = surface_data.get("gateway_routes_discovered", 0)
     lines = [
         f"# Security Audit Report: {target_repo} @ {commit_ref}",
         f"**Audit Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  ",
@@ -125,8 +141,9 @@ def generate_report(findings_file=".wstg-audit/verified_findings.json", matrix_f
         "",
         f"- **Repository:** `{target_repo}`",
         f"- **Source Reference:** `{commit_ref}` (Working tree reviewed)",
-        f"- **Execution Policy:** {scope_info.get('execution_policy', 'Source-only static analysis & AST trust-boundary verification (No target code executed live)')}",
-        f"- **Gateway-to-Service Mapping:** {scope_info.get('gateway_mappings_detected', 'Auto-discovered')}",
+        f"- **Execution Policy:** {scope_info.get('execution_policy', 'Source-only static analysis, AST taint verification & trust-boundary mapping (No target code executed live)')}",
+        f"- **Gateway-to-Service Mapping:** {scope_info.get('gateway_mappings_detected', f'{gateway_routes_count} gateway routes discovered via pluggable drivers')}",
+        f"- **Total Attack Surface Analyzed:** {surface_data.get('total_endpoints', 'N/A')} endpoints, {surface_data.get('total_non_rest_entrypoints', 0)} non-REST entrypoints",
         "- **Limits & Deviations:** Offline inspection mode. Ingress WAF rules, production cloud IAM bindings, and live third-party API limits are external deployment facts recorded under Needs Validation.",
         "",
         "---",
@@ -138,7 +155,7 @@ def generate_report(findings_file=".wstg-audit/verified_findings.json", matrix_f
     if posture_summary:
         lines.append(posture_summary)
     else:
-        lines.append("The repository surface was analyzed across web controllers, API gateway ingress rules, and AI integration boundaries. Trust boundaries were evaluated for broken authentication, object-level authorization (BOLA/IDOR), parameter injection, and token consumption limits.")
+        lines.append("The repository surface was analyzed across web controllers, API gateway ingress rules, async event handlers, and AI integration boundaries. Trust boundaries were evaluated for broken authentication, object-level authorization (BOLA/IDOR), parameter taint propagation, and token consumption limits.")
 
     lines.extend([
         "",
@@ -256,11 +273,36 @@ def generate_report(findings_file=".wstg-audit/verified_findings.json", matrix_f
         for h in hardening_notes:
             lines.append(f"- **[{h.get('scope', 'Infra')}]** {h.get('description', '')}")
 
+    # Section 7: Gateway Topology & Non-REST Surfaces
+    if surface_data:
+        lines.extend([
+            "",
+            "---",
+            "",
+            "## 7. Gateway Ingress Topology & Non-REST Surfaces",
+            "",
+            f"- **Active Gateway Drivers:** {len(surface_data.get('gateway_topology', []))} route bindings discovered",
+            f"- **Non-REST Entrypoints (WebSockets & Pub/Sub):** {surface_data.get('total_non_rest_entrypoints', 0)} detected",
+            f"- **AST Taint Invariant Flaws:** {surface_data.get('total_taint_vulnerabilities', 0)} flows to dangerous sinks",
+            ""
+        ])
+
+        non_rest = surface_data.get("non_rest_entrypoints", [])
+        if non_rest:
+            lines.extend([
+                "| Kind | Protocol | Path / Target | Auth Status | Risk Flag |",
+                "|---|---|---|---|---|"
+            ])
+            for nr in non_rest[:10]:
+                auth_badge = "❌ Unauthenticated" if nr.get("is_unauthenticated") else "✅ Guarded"
+                lines.append(f"| {nr.get('kind', 'N/A')} | `{nr.get('protocol', 'N/A')}` | `{nr.get('path', 'N/A')}` | {auth_badge} | {nr.get('threat', 'N/A')} |")
+            lines.append("")
+
     lines.extend([
         "",
         "---",
         "",
-        "## 7. OWASP WSTG & LLM Compliance Scorecard",
+        "## 8. OWASP WSTG & LLM Compliance Scorecard",
         "",
         "| WSTG Domain | Category Name | Status | Critical | High | Medium | Low |",
         "|---|---|---|---|---|---|---|",

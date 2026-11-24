@@ -1,69 +1,84 @@
-# OWASP WSTG Autonomous Security Audit Skill (Polyglot & Zero-Dependency)
+# OWASP WSTG Autonomous Security Audit Skill (v2.0)
 
-A shareable, methodology-driven application security auditor adhering to the **OWASP Web Security Testing Guide (WSTG v4.2 / v5)** across **any programming language and stack**.
+A shareable, methodology-driven application security auditor adhering to the **OWASP Web Security Testing Guide (WSTG v4.2 / v5)** and the **OWASP Top 10 for LLMs / GenAI (2025)** across **any programming language and stack**.
 
 ### Zero External Dependencies
 - **No Semgrep required.**
 - **No Trivy required.**
 - **No Docker required.**
 - **No Node.js, Go, or JDK required on host.**
-- Uses a lightweight, standard-library polyglot surface engine (`ast`, `re`, `json`, `os`, `sys`) coupled with the Agent's native polyglot reasoning.
+- Standard-library polyglot surface engine (`ast`, `re`, `json`, `os`, `sys`, `pathlib`) coupled with the Agent's native polyglot reasoning.
+
+---
+
+## What's New in v2.0
+
+1. **Pluggable Gateway Discovery Drivers:**
+   - Modular drivers for **FastAPI RouteMapping**, **Nginx**, **Envoy**, **Kubernetes Ingress / HTTPRoute**, **Traefik**, and **Express / NestJS global mounts**.
+   - Accurately distinguishes public, gateway-exposed mutating routes from internal microservice routes.
+2. **Function-Level AST Taint & Data-Flow Tracking:**
+   - Traces untrusted route parameters through assignments and formatting into dangerous sinks:
+     - **SQL Injection (`WSTG-INPV-05`)** via `cursor.execute`, `text()`, raw f-string queries
+     - **Command Injection (`WSTG-INPV-12`)** via `subprocess.run`, `os.system`
+     - **Path Traversal (`WSTG-INPV-12`)** via `open()`, `FileResponse`
+     - **Code Injection (`WSTG-INPV-11`)** via `eval()`, `exec()`
+     - **Insecure Deserialization (`WSTG-INPV-15`)** via `pickle.loads()`, `yaml.load()`
+     - **SSRF (`WSTG-INPV-16`)** via `requests.*`, `httpx.*`
+     - **Arbitrary Presigned Storage URLs (`WSTG-ATHZ-02`)** via `generate_presigned_url`
+3. **Syntax-Aware Multi-Language Parsers:**
+   - **TypeScript / NestJS:** Class-level `@Controller` prefixes, class-level `@UseGuards()`, and `@Public()` bypass detection.
+   - **Go:** `r.Group` route prefixes and inherited middleware (`group.Use(...)`).
+   - **Java / Spring Boot:** Class `@RequestMapping` combined with method mappings and `@PreAuthorize`.
+4. **Non-REST Entrypoint Scanner:**
+   - Audits **WebSockets** (`@router.websocket`, `socket.io`, `ws.on('connection')`) for handshake token validation.
+   - Audits **Pub/Sub & Message Queues** (GCP Pub/Sub, RabbitMQ, Kafka, Celery) for unvalidated payload ingestion.
+5. **Automated Git Remediation Patch Generator:**
+   - Automatically synthesizes ready-to-apply `.patch` Git unified diff files directly from confirmed audit findings.
 
 ---
 
 ## Supported Stacks & Frameworks
 
-| Language / Stack | Frameworks Supported | Auth Guards Checked |
+| Language / Stack | Frameworks Supported | Auth & Ingress Context Analyzed |
 |---|---|---|
-| **Python** | FastAPI, Django, Flask | `Depends(...)`, Type annotations, `@login_required` |
-| **TypeScript / JavaScript** | Express.js, NestJS, Next.js App Router (`route.ts`) | `@UseGuards()`, Auth middleware, Passport.js |
-| **Go** | Gin, Chi, Fiber, standard `net/http` | Auth middleware handlers, JWT context checks |
-| **Java / Kotlin** | Spring Boot (`@RestController`) | `@PreAuthorize`, `@Secured`, `@RolesAllowed` |
-| **Cross-Stack** | Rust, C#, Ruby, PHP | Native Agentic Semantic Reasoning |
+| **Python** | FastAPI, Django REST, Flask | AST route mapping, `APIRouter` prefix/dependencies, `Annotated[Depends]`, AST taint tracking to sinks |
+| **TypeScript / JS** | Express.js, NestJS, Next.js App Router | Class & method `@UseGuards()`, `@Public()` bypass, Express middleware chaining |
+| **Go** | Gin, Chi, Fiber, standard `net/http` | Route grouping (`r.Group`), middleware inheritance |
+| **Java / Kotlin** | Spring Boot (`@RestController`) | Class/method `@RequestMapping`, `@PreAuthorize`, `@Secured`, `@RolesAllowed` |
+| **Non-REST** | WebSockets, Pub/Sub, Kafka, Celery | WebSocket handshake authentication, async consumer message validation |
+| **AI / GenAI** | OpenAI, Anthropic, Gemini, LangChain, LiteLLM | Prompt injection, max tokens limit, client timeout, unscoped vector RAG |
 
 ---
 
-## What It Detects (The Architecture Flaws Linters Miss)
+## Running the Skill Manually
 
-1. **Unauthenticated Dangerous Endpoints (`WSTG-ATHN-04`):**
-   * Discovers `DELETE`, `POST`, `PUT` routes that lack authentication guards across all stacks.
-2. **Unpartitioned Cache & Secret Lookups (`WSTG-SESS-04` / `WSTG-ATHZ-02`):**
-   * Flags generic cache getters that can leak OTPs or provider session tokens.
-3. **BOLA / IDOR on Resource Identifiers (`WSTG-ATHZ-02`):**
-   * Identifies routes accepting caller-supplied object keys, session IDs, or files without user ownership checks.
-4. **Internal Header Spoofing (`WSTG-ATHN-04`):**
-   * Detects services that trust internal user headers directly without verifying gateway tokens.
+### 1. Polyglot Surface, Gateway & Taint Analysis:
+```bash
+python scripts/map_surface.py <path-to-target-repo> .wstg-audit/surface_map.json
+```
+
+### 2. Generate Compliance Scorecard:
+```bash
+python scripts/generate_report.py .wstg-audit/verified_findings.json .wstg-audit/WSTG-REPORT.md
+```
+
+### 3. Generate Automated Remediation Patches:
+```bash
+python scripts/generate_patches.py .wstg-audit/verified_findings.json --output-dir .wstg-audit/patches
+```
 
 ---
 
 ## How to Share & Install
 
 ### 1. In Your Team's Git Repository (Zero Setup)
-The skill is located at `.agents/skills/wstg-audit/`. Commit it to your repo:
 ```bash
 git add .agents/skills/wstg-audit/
-git commit -m "feat(security): add polyglot zero-dependency WSTG audit skill"
+git commit -m "feat(security): add polyglot zero-dependency WSTG audit skill v2.0"
 git push
 ```
-Any teammate opening the repo in Antigravity or a compatible agent gets the skill automatically.
 
-### 2. Standalone Git Repo (Cloudflare Model)
-Push this folder to a standalone GitHub repository (`https://github.com/your-org/wstg-audit-skill`).
-Install in any repository using:
+### 2. Standalone Git Repo
 ```bash
 npx skills add https://github.com/your-org/wstg-audit-skill --skill wstg-audit
 ```
-
----
-
-## Running the Skill Manually
-
-1. **Polyglot Surface & Trust-Chain Analysis:**
-   ```bash
-   python .agents/skills/wstg-audit/scripts/map_surface.py . surface_map.json
-   ```
-
-2. **Generate Compliance Scorecard:**
-   ```bash
-   python .agents/skills/wstg-audit/scripts/generate_report.py verified_findings.json
-   ```

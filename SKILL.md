@@ -1,13 +1,13 @@
 ---
 name: wstg-audit
-description: Autonomous polyglot security auditor for OWASP WSTG v4.2/v5 and OWASP Top 10 for LLMs. Use when asked to audit authentication, authorization (BOLA/IDOR), API trust boundaries, Gateway-to-Service exposure, prompt injection, or full WSTG compliance.
+description: Autonomous polyglot security auditor for OWASP WSTG v4.2/v5 and OWASP Top 10 for LLMs. Use when asked to audit authentication, authorization (BOLA/IDOR), API trust boundaries, Gateway-to-Service exposure, AST taint tracking, prompt injection, or full WSTG compliance.
 ---
 
-# OWASP WSTG Autonomous Security Audit Skill
+# OWASP WSTG Autonomous Security Audit Skill (v2.0)
 
 This skill equips the agent to conduct exhaustive, methodology-driven application security audits adhering to the **OWASP Web Security Testing Guide (WSTG v4.2 / v5)** and the **OWASP Top 10 for LLMs / GenAI (2025)** across multiple technology stacks.
 
-It provides a native, zero-dependency polyglot surface mapping engine coupled with deep agentic code verification across **Gateway $\rightarrow$ Microservice trust boundaries**.
+It provides a native, zero-dependency polyglot surface mapping engine, pluggable gateway ingress drivers, AST-level taint/data-flow analysis, and deep agentic code verification across **Gateway $\rightarrow$ Microservice trust boundaries**.
 
 ---
 
@@ -15,79 +15,72 @@ It provides a native, zero-dependency polyglot surface mapping engine coupled wi
 
 | Stack | Parsers & Frameworks Supported | Security & Auth Context Analyzed |
 |---|---|---|
-| **Python** | FastAPI, Django REST Framework, Flask | AST-based route extraction, `APIRouter(prefix, dependencies)`, decorator `dependencies=[Depends(...)]`, `Annotated[..., Depends(...)]`, exclusion of non-auth DB sessions |
-| **TypeScript / JS** | NestJS, Express.js, Next.js App Router (`route.ts`) | Automatic NestJS `APP_GUARD` global security discovery, `@Public()` opt-out detection, class & method `@UseGuards()`, Next.js route handlers |
-| **Java / Kotlin** | Spring Boot | `@RestController`, `@RequestMapping`, `@GetMapping`, `@PostMapping`, `@PreAuthorize`, `@Secured`, `@RolesAllowed` |
-| **Go** | Gin, Chi, Fiber, standard `net/http` | Route verbs (`r.GET`, `r.POST`), middleware handlers (`jwt`, `auth`, `token`) |
+| **Python** | FastAPI, Django REST Framework, Flask | AST route extraction, `APIRouter(prefix, dependencies)`, decorator `dependencies=[Depends(...)]`, `Annotated[..., Depends(...)]`, exclusion of non-auth DB sessions, **AST Taint Tracking down to dangerous sinks** |
+| **TypeScript / JS** | NestJS, Express.js, Next.js App Router (`route.ts`) | Automatic NestJS `APP_GUARD` global security discovery, class-level `@Controller` prefixes & `@UseGuards()`, `@Public()` opt-out detection, method `@UseGuards()`, Express router middleware mounting |
+| **Go** | Gin, Chi, Fiber, standard `net/http` | Grouped routes (`r.Group`), prefix inheritance, middleware inheritance (`group.Use(...)`), route verbs (`r.GET`, `r.POST`) |
+| **Java / Kotlin** | Spring Boot | `@RestController`, class & method `@RequestMapping`, `@GetMapping`, `@PostMapping`, class & method `@PreAuthorize`, `@Secured`, `@RolesAllowed` |
+| **Non-REST** | WebSockets, GCP Pub/Sub, RabbitMQ, Kafka, Celery | WebSocket handshake authentication (`@router.websocket`, `socket.io`, `ws.on('connection')`), async subscriber message payload validation |
 | **AI / GenAI** | OpenAI (Chat & Responses), Anthropic, Gemini, LangChain, LiteLLM, Vercel AI SDK | `LLM01` (Prompt Injection), `LLM02` (Insecure Output), `LLM06` (Excessive Agency), `LLM08` (Unscoped RAG), `LLM10` (Unbounded Consumption / Max Tokens) |
 
 ---
 
-## Autonomous Self-Evolution & Fallback Engine (`SKILL_EVOLUTION`)
+## Pluggable Gateway & Ingress Discovery Drivers
 
-A primary strength of the `wstg-audit` skill is its **self-evolving architectural fallback**. Real-world repositories frequently feature proprietary routing layers, unmapped micro-frameworks (e.g., Rust Axum/Actix, C# ASP.NET Core, PHP Laravel/Symfony, Ruby on Rails, Elixir Phoenix), or custom ingress proxies (e.g., Envoy, Kong, Traefik, Nginx, APISIX) not predefined in the static mapper.
+The surface analyzer automatically discovers perimeter gateways to differentiate externally exposed routes from private microservice routes using modular drivers:
 
-When the agent encounters an unmapped technology or custom gateway layer, it must **never abort or produce an unverified pass**. Instead, the agent executes the **Autonomous Adaptation Protocol**:
+1. **`FastAPIRouteMappingDriver`:** Discovers `RouteMapping(public_prefix, service_name, target_prefix=...)` in gateway dispatchers (e.g. `container.py`).
+2. **`NginxGatewayDriver`:** Parses `location <prefix> { proxy_pass http://<service>; }` reverse proxy rules in `.conf` files.
+3. **`EnvoyGatewayDriver`:** Parses Envoy routing tables (`route_config`, `virtual_hosts`, `prefix: ...`, `cluster: ...`).
+4. **`KubernetesIngressDriver`:** Parses Kubernetes `Ingress` and Gateway API `HTTPRoute` YAML manifests.
+5. **`TraefikGatewayDriver`:** Parses Traefik dynamic routing rules (`PathPrefix(...)` and service declarations).
+6. **`ExpressNestMountDriver`:** Parses NestJS `app.setGlobalPrefix('...')` and Express `app.use('/prefix', router)`.
 
-1. **Surface Reconnaissance & Framework Discovery:**
-   - Scan configuration files and dependency manifests (`Cargo.toml`, `*.csproj`, `composer.json`, `Gemfile`, `mix.exs`, `envoy.yaml`, `nginx.conf`, custom proxy configurations) to identify active web engines and ingress routers.
-   - Inspect routing definitions, dispatch tables, and middleware chains to determine entrypoints, path prefixes, parameter syntax, and authentication middleware.
+---
 
-2. **Dynamic Surface Synthesis & Mapper Extension:**
-   - Either extend `scripts/map_surface.py` by adding framework regex/AST parsing rules, or generate an ad-hoc adapter script to parse the routes, public vs. protected scopes, and parameter bindings.
-   - Cross-reference ingress routing tables (e.g., API gateway dispatchers, reverse proxy configs) against downstream handlers to verify external reachability.
+## AST Function-Level Taint & Data-Flow Tracking
 
-3. **Audit Memory & Evolution Logging:**
-   - Record newly discovered framework parsers, ingress mapping patterns, and heuristic adjustments in `.wstg-audit/evolution_log.json`:
-     ```json
-     {
-       "timestamp": "2026-11-24T15:20:00Z",
-       "framework_discovered": "Rust Axum",
-       "file_patterns": ["src/**/*.rs"],
-       "auth_mechanisms_identified": ["Extension(AuthUser)", "from_request_parts"],
-       "adaptation_applied": "Synthesized Axum route extractor into map_surface.py"
-     }
-     ```
+The Python surface engine includes an intra-procedural AST taint tracker that models untrusted parameters flowing down to dangerous sinks:
 
-4. **Resilient Agentic Fallback:**
-   - If AST or regex parsing cannot fully resolve ambiguous routing (e.g. dynamic reflection or meta-programming), fall back to structured semantic code inspection.
-   - Trace each mutating endpoint manually from Entrypoint to Sink to guarantee zero false negatives across critical trust boundaries.
+* **`WSTG-INPV-05` (SQL Injection):** Tracks parameters reaching `cursor.execute()`, `session.execute(text(...))`, or raw queries constructed via f-strings or string concatenation with SQL keywords.
+* **`WSTG-INPV-12` (Command Injection):** Detects untrusted parameters flowing into `subprocess.run()`, `subprocess.Popen()`, `os.system()`, or `os.popen()` (with special escalation on `shell=True`).
+* **`WSTG-INPV-12` (Path Traversal):** Identifies file path variables reaching `open()`, `aiofiles.open()`, `os.remove()`, or `FileResponse()` without safe path resolution (`.resolve()`).
+* **`WSTG-INPV-11` (Code Injection):** Flags parameters reaching `eval()`, `exec()`, or `compile()`.
+* **`WSTG-INPV-15` (Insecure Deserialization):** Flags untrusted data reaching `pickle.loads()`, `yaml.load()` (without `SafeLoader`), or `marshal.loads()`.
+* **`WSTG-INPV-16` (SSRF):** Identifies parameters reaching outbound HTTP client requests (`requests.get`, `httpx.post`, `urllib.request.urlopen`).
+* **`WSTG-ATHZ-02` (Arbitrary Storage Signed URL Exposure):** Tracks caller-supplied object keys reaching `generate_presigned_url` or `signed_url` without ownership verification.
 
 ---
 
 ## The 4-Phase Audit Workflow
 
 ```
-[Phase 1: Polyglot Surface & Gateway Mapping]
-                       │
-                       ▼
+[Phase 1: Polyglot Surface, Gateway & Taint Mapping]
+                        │
+                        ▼
 [Phase 2: Optional Static Pre-Filter (Semgrep)]
-                       │
-                       ▼
+                        │
+                        ▼
 [Phase 3: Deep Logic & Authorization Verification (Trace Analysis)]
-                       │
-                       ▼
-[Phase 4: WSTG Compliance Scorecard & Report Generation]
+                        │
+                        ▼
+[Phase 4: Compliance Scorecard & Remediation Patch Generation]
 ```
 
 All run outputs are written to the `.wstg-audit/` directory to prevent repository root clutter.
 
 ---
 
-### Phase 1: Polyglot Surface & Gateway Mapping
+### Phase 1: Polyglot Surface, Gateway & Taint Mapping
 Run the surface analyzer across the repository:
 ```bash
 python .agents/skills/wstg-audit/scripts/map_surface.py . .wstg-audit/surface_map.json
 ```
 The script performs:
-1. **Gateway Route Discovery:** Extracts route mappings (e.g. from `container.py` or proxy configs) to determine which endpoints are exposed externally vs. internal-only microservice routes.
-2. **Framework Auth Inheritance:** Discovers application-level guards (like NestJS `APP_GUARD` or global FastAPI dependencies) so that protected routes are not misclassified as unauthenticated.
-3. **AI Surface Scan:** Checks LLM client calls for `max_tokens`, client timeouts, direct prompt string interpolations, and unscoped vector database similarity searches.
-4. **Threat Classification:**
-   * **CRITICAL:** Public, Gateway-Exposed unauthenticated mutating routes (`POST`, `PUT`, `DELETE`).
-   * **HIGH:** Public unauthenticated parameter lookups, BOLA/IDOR candidates without user/tenant validation, and prompt injection vectors.
-   * **MEDIUM:** Handlers inspecting raw internal headers (`x-bantrly-*`) without caller validation.
-   * **LOW / INTERNAL:** Internal microservice routes unexposed through the gateway.
+1. **Pluggable Gateway Discovery:** Distinguishes externally exposed routes from internal microservice routes.
+2. **Framework Auth Inheritance:** Discovers NestJS `APP_GUARD`, class-level `@UseGuards()`, and Go router group middleware.
+3. **AST Taint Tracking:** Surfaces dangerous sinks receiving tainted route inputs.
+4. **Non-REST Entrypoint Scan:** Audits WebSockets and async Pub/Sub event consumers.
+5. **AI Surface Scan:** Checks LLM client calls for `max_tokens`, client timeouts, direct prompt string interpolations, and unscoped vector database similarity searches.
 
 ---
 
@@ -119,16 +112,7 @@ The agent audits candidate findings against the 5 critical WSTG domains:
    - Does the model call have bounded token generation (`max_tokens`)?
    - Are untrusted database values or user inputs concatenated into system prompt instructions?
 
-#### Verification Contract & Finding Statuses (`.wstg-audit/verified_findings.json`)
-
-Findings in `.wstg-audit/verified_findings.json` must follow a strict lifecycle status:
-
-| Finding Status | Meaning | When to Use |
-|---|---|---|
-| `confirmed` | **Independently Proven Vulnerability** | An unbroken execution trace exists from Entrypoint to Sink. The flaw is exploitable based on visible code and configuration without depending on unverified external assumptions. Requires reproducible PoC and remediation. |
-| `needs-validation` | **Source-Verified Lead with Deployment Unknown** | A dangerous code pattern or missing control is verified in source, but exploitability depends on an unobserved production fact (e.g. edge WAF rules, cloud IAM bucket ACLs, private VPC isolation). Requires local/deployment test plans. |
-| `suppressed` | **Evaluated False Positive / Defense Holds** | Candidate flagged by static scanners or prefilters, but manual code analysis confirms architectural defenses (e.g. constant-time HMAC check, upstream gateway stripping, strict enum validation) neutralize the risk. |
-
+#### Verification Contract (`.wstg-audit/verified_findings.json`)
 Every verified finding must be written with the following strict JSON schema:
 ```json
 {
@@ -156,17 +140,22 @@ Every verified finding must be written with the following strict JSON schema:
 
 ---
 
-### Phase 4: Compliance Scorecard & Remediation Report
-Compile findings into the final compliance report:
+### Phase 4: Compliance Scorecard & Remediation Patch Generation
+
+#### 1. Compile the Compliance Report
 ```bash
 python .agents/skills/wstg-audit/scripts/generate_report.py .wstg-audit/verified_findings.json .wstg-audit/WSTG-REPORT.md
 ```
 
-#### Scorecard Status Meanings
-The compliance matrix strictly rejects naive `PASS` assertions. Each domain receives one of three truthful statuses:
+#### 2. Generate Automated Git Unified Diff Patches
+```bash
+python .agents/skills/wstg-audit/scripts/generate_patches.py .wstg-audit/verified_findings.json --output-dir .wstg-audit/patches
+```
+This produces ready-to-apply `.patch` files for each confirmed vulnerability as well as a consolidated `all_remediations.patch`.
 
+#### Scorecard Status Standards
 | Scorecard Status | Meaning & Criteria |
 |---|---|
-| `⚪ UNTESTED` | **Domain Out of Scope / Unreviewed:** The auditor did not inspect endpoints or logic under this domain during the run. Indicates zero testing occurred—prevents teams from mistaking uninspected areas for secure code. |
-| `🟢 SECURE` | **Actively Audited & Defended:** The domain was explicitly evaluated (included in `audited_domains`), surface handlers were audited, and all relevant security controls were verified active and effective without flaws. |
-| `🔴 VULNERABLE (X)` | **Active Vulnerabilities Confirmed:** One or more findings in this domain were validated with proven `[ENTRYPOINT] -> [SINK]` traces. Breakdown by severity (Critical, High, Medium, Low) is shown in the table. |
+| `⚪ UNTESTED` | **Domain Out of Scope / Unreviewed:** Indicates zero testing occurred—prevents mistaking uninspected areas for secure code. |
+| `🟢 SECURE` | **Actively Audited & Defended:** The domain was explicitly evaluated, handlers were audited, and all relevant security controls were verified active without defects. |
+| `🔴 VULNERABLE (X)` | **Active Vulnerabilities Confirmed:** One or more findings in this domain were validated with proven `[ENTRYPOINT] -> [SINK]` traces. |
