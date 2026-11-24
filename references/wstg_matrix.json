@@ -1,0 +1,152 @@
+{
+  "domains": {
+    "WSTG-INFO": {
+      "name": "Information Gathering",
+      "checks": {
+        "WSTG-INFO-01": "Conduct Search Engine Discovery Reconnaissance for Information Leakage",
+        "WSTG-INFO-02": "Fingerprint Web Server & API Gateways",
+        "WSTG-INFO-03": "Review Webserver Metafiles for Information Leakage (robots.txt, sitemap)",
+        "WSTG-INFO-04": "Enumerate Applications on Webserver",
+        "WSTG-INFO-05": "Review Webpage Content for Information Leakage (Comments, debug flags)",
+        "WSTG-INFO-06": "Identify Application Entry Points & Surface Mapping",
+        "WSTG-INFO-07": "Map Execution Paths Through Application",
+        "WSTG-INFO-08": "Fingerprint Web Application Frameworks",
+        "WSTG-INFO-09": "Fingerprint Web Application Components & Libraries",
+        "WSTG-INFO-10": "Map Application Architecture & Trust Boundaries"
+      }
+    },
+    "WSTG-CONF": {
+      "name": "Configuration and Deployment Management",
+      "checks": {
+        "WSTG-CONF-01": "Test Network Infrastructure Configuration & Exposed Ports",
+        "WSTG-CONF-02": "Test Application Platform Configuration (Debug mode, stack traces)",
+        "WSTG-CONF-03": "Test File Extensions Handling for Sensitive Files (.env, .git, backups)",
+        "WSTG-CONF-04": "Review Old, Backup and Unreferenced Files for Sensitive Information",
+        "WSTG-CONF-05": "Enumerate Infrastructure and Admin Interfaces",
+        "WSTG-CONF-06": "Test HTTP Methods (TRACE, OPTIONS, PUT/DELETE overrides)",
+        "WSTG-CONF-07": "Test HTTP Strict Transport Security (HSTS)",
+        "WSTG-CONF-08": "Test RIA Cross Domain Policy",
+        "WSTG-CONF-09": "Test File Permission and Container Root Execution (Missing non-root USER)",
+        "WSTG-CONF-10": "Test Subdomain Takeover",
+        "WSTG-CONF-11": "Test Cloud Storage & Bucket Permissions"
+      }
+    },
+    "WSTG-IDMT": {
+      "name": "Identity Management",
+      "checks": {
+        "WSTG-IDMT-01": "Test Role Definitions & Privilege Granularity",
+        "WSTG-IDMT-02": "Test User Registration Process",
+        "WSTG-IDMT-03": "Test Account Provisioning and Deprovisioning Process",
+        "WSTG-IDMT-04": "Testing for Account Enumeration and Guessable User Account"
+      }
+    },
+    "WSTG-ATHN": {
+      "name": "Authentication Testing",
+      "checks": {
+        "WSTG-ATHN-01": "Testing for Credentials Transported over an Encrypted Channel",
+        "WSTG-ATHN-02": "Testing for Default Credentials",
+        "WSTG-ATHN-03": "Testing for Weak Lockout Mechanism & Brute Force Rate Limiting",
+        "WSTG-ATHN-04": "Testing for Bypassing Authentication Schema",
+        "WSTG-ATHN-05": "Testing for Vulnerable Remember Password and Password Reset",
+        "WSTG-ATHN-06": "Testing for Browser Cache Weaknesses",
+        "WSTG-ATHN-07": "Testing for Weak Password Policy",
+        "WSTG-ATHN-08": "Testing for Weak Security Question Answers",
+        "WSTG-ATHN-09": "Testing for Weak Password Change or Reset Functionalities",
+        "WSTG-ATHN-10": "Testing for Weak Multi-Factor Authentication",
+        "WSTG-ATHN-11": "Testing for JSON Web Token (JWT) Signature & Algorithm Confusion"
+      }
+    },
+    "WSTG-ATHZ": {
+      "name": "Authorization Testing",
+      "checks": {
+        "WSTG-ATHZ-01": "Testing Directory Traversal / File Include",
+        "WSTG-ATHZ-02": "Testing for BOLA / Insecure Direct Object References (IDOR)",
+        "WSTG-ATHZ-03": "Testing for Missing Function Level Access Control (Vertical Privilege Escalation)",
+        "WSTG-ATHZ-04": "Testing for Insecure Multi-Tenant Data Isolation"
+      }
+    },
+    "WSTG-SESS": {
+      "name": "Session Management Testing",
+      "checks": {
+        "WSTG-SESS-01": "Testing for Bypassing Session Management Schema",
+        "WSTG-SESS-02": "Testing for Cookies Attributes (HttpOnly, Secure, SameSite)",
+        "WSTG-SESS-03": "Testing for Session Fixation",
+        "WSTG-SESS-04": "Testing for Exposed Session Variables in Logs or URLs",
+        "WSTG-SESS-05": "Testing for Cross-Site Request Forgery (CSRF)",
+        "WSTG-SESS-06": "Testing for Logout Functionality and Token Invalidation",
+        "WSTG-SESS-07": "Testing Session Timeout and Replay Limits",
+        "WSTG-SESS-08": "Testing for Session Puzzling / Session Variable Overwriting"
+      }
+    },
+    "WSTG-INPV": {
+      "name": "Data Validation & Injection Testing",
+      "checks": {
+        "WSTG-INPV-01": "Testing for Reflected Cross Site Scripting",
+        "WSTG-INPV-02": "Testing for Stored Cross Site Scripting",
+        "WSTG-INPV-05": "Testing for SQL Injection (Raw Queries, F-String SQL)",
+        "WSTG-INPV-06": "Testing for LDAP Injection",
+        "WSTG-INPV-07": "Testing for ORM Injection",
+        "WSTG-INPV-08": "Testing for XML Injection / XXE",
+        "WSTG-INPV-11": "Testing for Code Injection",
+        "WSTG-INPV-12": "Testing for Command Injection (subprocess.run, shell=True)",
+        "WSTG-INPV-16": "Testing for Server-Side Request Forgery (SSRF)",
+        "WSTG-INPV-17": "Testing for Mass Assignment / Parameter Tampering",
+        "WSTG-INPV-19": "Testing for Server-Side Template Injection (SSTI)"
+      }
+    },
+    "WSTG-ERRH": {
+      "name": "Error Handling Testing",
+      "checks": {
+        "WSTG-ERRH-01": "Testing for Improper Error Handling & Stack Trace Leaks",
+        "WSTG-ERRH-02": "Testing for Analysis of Error Codes"
+      }
+    },
+    "WSTG-CRYP": {
+      "name": "Cryptography Testing",
+      "checks": {
+        "WSTG-CRYP-01": "Testing for Weak Transport Layer Security (TLS)",
+        "WSTG-CRYP-02": "Testing for Weak Padding & Insecure Ciphers",
+        "WSTG-CRYP-03": "Testing for Sensitive Data Sent Via Unencrypted Channels",
+        "WSTG-CRYP-04": "Testing for Weak Random Number Generation (random vs secrets)"
+      }
+    },
+    "WSTG-BUSL": {
+      "name": "Business Logic Testing",
+      "checks": {
+        "WSTG-BUSL-01": "Test Business Logic Data Validation & Negative Values",
+        "WSTG-BUSL-02": "Test Ability to Forge Requests / Step Skipping",
+        "WSTG-BUSL-03": "Test Integrity Checks & Signature Tampering",
+        "WSTG-BUSL-04": "Test Process Timing & Race Conditions (TOCTOU)",
+        "WSTG-BUSL-05": "Test Number of Times a Function Can Be Used (Limits & Quotas)"
+      }
+    },
+    "WSTG-CLNT": {
+      "name": "Client-Side Testing",
+      "checks": {
+        "WSTG-CLNT-01": "Testing for DOM-Based Cross Site Scripting",
+        "WSTG-CLNT-02": "Testing for JavaScript Execution / Prototype Pollution",
+        "WSTG-CLNT-07": "Testing for Cross-Origin Resource Sharing (CORS) Misconfiguration",
+        "WSTG-CLNT-10": "Testing for WebSockets Security (Origin & Handshake Validation)"
+      }
+    },
+    "WSTG-APIT": {
+      "name": "API Testing",
+      "checks": {
+        "WSTG-APIT-01": "Testing for Improper Asset Management & Zombie APIs",
+        "WSTG-APIT-02": "Testing for Excessive Data Exposure in JSON Responses",
+        "WSTG-APIT-03": "Testing for Unrestricted Resource Consumption & DoS"
+      }
+    },
+    "OWASP-LLM": {
+      "name": "OWASP Top 10 for Large Language Models & AI Systems",
+      "checks": {
+        "LLM01": "Prompt Injection (Direct user transcript/input string formatting into system or user prompt)",
+        "LLM02": "Insecure Output Handling (Direct execution or unescaped rendering of model response)",
+        "LLM06": "Excessive Agency & Unsafe Tool Calling (Autonomous function invocation without human gate)",
+        "LLM07": "System Prompt & Architecture Leakage (Model extraction or meta-prompt exposure)",
+        "LLM08": "Vector & Embeddings Weaknesses (Unchecked multi-tenant knowledge base retrieval / RAG leaks)",
+        "LLM10": "Unbounded Resource Consumption (Denial of Wallet, missing max_tokens or client timeouts)"
+      }
+    }
+  }
+}

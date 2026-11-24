@@ -1,0 +1,10 @@
+{
+  "name": "wstg-audit",
+  "displayName": "OWASP WSTG Security Auditor",
+  "description": "Autonomous security audit skill implementing the 12 OWASP Web Security Testing Guide (WSTG v4.2/v5) domains with grey-box verification.",
+  "suggestedPrompts": [
+    "Run a full WSTG security audit across all service routers",
+    "Audit authentication and session handling against WSTG-ATHN and WSTG-SESS",
+    "Run Semgrep pre-filtering and verify suspected IDOR / injection candidates"
+  ]
+}
